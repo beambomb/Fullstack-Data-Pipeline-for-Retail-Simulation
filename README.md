@@ -96,18 +96,18 @@ Platform simulasi ritel berbasis **Agent-Based Modelling (ABM)** dengan arsitekt
 
 Bagian-bagian berikut adalah tahapan lanjutan untuk melengkapi pipeline Data Engineering:
 
-- [ ] **1. Script Ingestion ke PostgreSQL OLTP (`data_engineering/scripts/load_oltp.py`):**
+- [x] **1. Script Ingestion ke PostgreSQL OLTP (`data_engineering/scripts/load_oltp.py`):**
   - Membaca file CSV dari `data/raw/` dan memasukkannya ke database PostgreSQL relasional (3NF) sesuai urutan *Foreign Key*.
-- [ ] **2. Script Pembersihan Data / Staging Cleansing (`data_engineering/scripts/cleanse_silver.py`):**
-  - Mengambil data dari OLTP untuk dicuci menggunakan Python / PySpark:
+- [x] **2. Script Pembersihan Data / Staging Cleansing (`data_engineering/scripts/cleanse_silver.py`):**
+  - Mengambil data dari OLTP untuk dicuci menggunakan Python:
     - Mendeteksi dan menghapus duplikasi *double scan* kasir.
     - Mengkarantina transaksi dengan SKU salah ketik (*invalid SKU typo*).
     - Menghitung ulang omzet bersih dengan mengecualikan item yang dibatalkan (*void*).
     - Standarisasi format tanggal dan imputasi nilai kosong.
-- [ ] **3. Script Pemodelan Dimensi OLAP (`data_engineering/scripts/load_olap.py`):**
+- [x] **3. Script Pemodelan Dimensi OLAP (`data_engineering/scripts/load_olap.py`):**
   - Mengisi tabel dimensi dan tabel fakta di database analitik (*Star Schema*).
-- [ ] **4. Otomatisasi dengan Apache Airflow DAG (`data_engineering/airflow/retail_dag.py`):**
-  - Menjadwalkan alur Extract $\rightarrow$ Cleanse $\rightarrow$ Load agar berjalan otomatis setiap malam.
+- [x] **4. Otomatisasi dengan Apache Airflow DAG (`data_engineering/airflow/dags/retail_daily_etl_dag.py`):**
+  - Menjadwalkan alur Ingest $\rightarrow$ Cleanse $\rightarrow$ Load $\rightarrow$ Data Quality Audit otomatis setiap jam 01:00 pagi.
 - [ ] **5. Visualisasi Tableau & Model Prediksi Time-Series:**
   - Menyambungkan database OLAP ke Tableau untuk analisis bisnis (korelasi kelelahan kasir vs tingkat kesalahan).
   - Pembuatan model time-series (Prophet / LightGBM) untuk memprediksi omzet 30 hari ke depan.
@@ -181,27 +181,55 @@ Porto_Data/
 │       ├── inventory_catalog.csv
 │       └── simulation_metrics.json
 ├── data_engineering/
+│   ├── airflow/
+│   │   └── dags/
+│   │       └── retail_daily_etl_dag.py
 │   ├── schemas/
 │   │   ├── oltp_schema.sql
 │   │   └── olap_star_schema.sql
+│   ├── scripts/
+│   │   ├── load_oltp.py
+│   │   ├── cleanse_silver.py
+│   │   ├── load_olap.py
+│   │   └── run_pipeline.py
 │   └── README.md
+├── docker/
+│   └── init-db.sql
+├── docker-compose.yml
+├── .env.example
 ├── main.py
 └── README.md
 ```
 
 ---
 
-## Cara Menjalankan Aplikasi
+## Cara Menjalankan Aplikasi & Data Pipeline
 
-1. **Jalankan Server Web:**
-   ```powershell
-   python main.py
-   ```
-2. **Akses Dashboard:**
-   Buka peramban ke: `http://127.0.0.1:5000`
-3. **Eksplorasi Simulasi:**
-   - Atur parameter simulasi melalui panel kiri (durasi hari, rasio kasir, kelelahan, dan error multiplier).
-   - Klik tombol **Run Simulation**.
-   - Pantau grafik omzet dan distribusi error secara visual.
-   - Gunakan tabel transaksi untuk menginspeksi struk belanja dan error manusia yang terinjeksi.
-   - Unduh file CSV melalui bagian **Data Engineering Artifacts**.
+### 1. ABM Simulation Web Dashboard (Local Flask)
+```powershell
+python main.py
+```
+- Akses UI di: `http://127.0.0.1:5000`
+- Mainkan slider simulasi, atur pola hari diskrit, dan unduh data transaksi CSV.
+
+### 2. Containerized Data Engineering Stack (Docker)
+Salin `.env.example` ke `.env` jika belum ada:
+```powershell
+cp .env.example .env
+docker compose up -d
+```
+Layanan aktif:
+- **PostgreSQL 16 Engine**: `localhost:5433` (Databases: `retail_oltp`, `retail_olap`, `retail_airflow`)
+- **pgAdmin 4 Web GUI**: [http://localhost:5050](http://localhost:5050) (User: `admin@retail.com`, Pass: `admin123`)
+- **Apache Airflow 2.9.3 Web UI**: [http://localhost:8080](http://localhost:8080) (User: `admin`, Pass: `admin`)
+
+### 3. Eksekusi End-to-End ETL Pipeline
+Kamu dapat menjalankan pipeline lewat CLI mandiri atau lewat Airflow:
+
+**Opsi A — CLI Runner Langsung:**
+```powershell
+python data_engineering/scripts/run_pipeline.py
+```
+
+**Opsi B — Apache Airflow Web UI:**
+Buka [http://localhost:8080](http://localhost:8080), aktifkan DAG `retail_daily_etl_pipeline`, dan klik **Trigger DAG**. Seluruh tahapan (`ingest_raw_to_oltp` $\rightarrow$ `cleanse_and_stage_silver` $\rightarrow$ `load_dimensional_olap` $\rightarrow$ `data_quality_audit`) akan berjalan terjadwal secara otomatis.
